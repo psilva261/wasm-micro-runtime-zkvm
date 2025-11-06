@@ -15,7 +15,9 @@
 #include "bh_platform.h"
 #include "blocking_op.h"
 #include "wasmtime_ssp.h"
+#ifndef BH_PLATFORM_ZKVM
 #include "libc_errno.h"
+#endif
 #include "locking.h"
 #include "posix.h"
 #include "random.h"
@@ -94,7 +96,7 @@ ns_lookup_list_search(char **list, const char *host)
     return false;
 }
 
-#if !defined(BH_PLATFORM_WINDOWS) && CONFIG_HAS_CLOCK_NANOSLEEP
+#if !defined(BH_PLATFORM_WINDOWS) && !defined(BH_PLATFORM_ZKVM) && CONFIG_HAS_CLOCK_NANOSLEEP
 static bool
 wasi_clockid_to_clockid(__wasi_clockid_t in, clockid_t *out)
 {
@@ -181,6 +183,7 @@ static void
 wasi_addr_ip_to_bh_ip_addr_buffer(__wasi_addr_ip_t *addr,
                                   bh_ip_addr_buffer_t *out)
 {
+#ifndef BH_PLATFORM_ZKVM
     if (addr->kind == IPv4) {
         out->ipv4 = htonl((addr->addr.ip4.n0 << 24) | (addr->addr.ip4.n1 << 16)
                           | (addr->addr.ip4.n2 << 8) | addr->addr.ip4.n3);
@@ -195,6 +198,7 @@ wasi_addr_ip_to_bh_ip_addr_buffer(__wasi_addr_ip_t *addr,
         out->ipv6[6] = htons(addr->addr.ip6.h2);
         out->ipv6[7] = htons(addr->addr.ip6.h3);
     }
+#endif
 }
 
 struct fd_prestat {
@@ -663,6 +667,9 @@ fd_table_insert(wasm_exec_env_t exec_env, struct fd_table *ft,
                 __wasi_rights_t rights_inheriting, __wasi_fd_t *out)
     REQUIRES_UNLOCKED(ft->lock) UNLOCKS(fo->refcount)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     // Grow the file descriptor table if needed.
     rwlock_wrlock(&ft->lock);
     if (!fd_table_grow(ft, 0, 1)) {
@@ -681,6 +688,7 @@ fd_table_insert(wasm_exec_env_t exec_env, struct fd_table *ft,
     fd_table_attach(ft, *out, fo, rights_base, rights_inheriting);
     rwlock_unlock(&ft->lock);
     return error;
+#endif
 }
 
 // Inserts a numerical file descriptor into the file descriptor table.
@@ -1304,6 +1312,9 @@ path_get(wasm_exec_env_t exec_env, struct fd_table *curfds,
          __wasi_rights_t rights_inheriting, bool needs_final_component)
     TRYLOCKS_EXCLUSIVE(0, pa->fd_object->refcount)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     char *path = str_nullterminate(upath, upathlen);
     if (path == NULL)
         return convert_errno(errno);
@@ -1535,6 +1546,7 @@ fail:
     fd_object_release(NULL, fo);
     return error;
 #endif
+#endif // BH_PLATFORM_ZKVM
 }
 
 static __wasi_errno_t
@@ -2022,6 +2034,9 @@ wasmtime_ssp_path_symlink(wasm_exec_env_t exec_env, struct fd_table *curfds,
                           size_t old_path_len, __wasi_fd_t fd,
                           const char *new_path, size_t new_path_len)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     char *target = str_nullterminate(old_path, old_path_len);
     if (target == NULL)
         return convert_errno(errno);
@@ -2049,6 +2064,7 @@ wasmtime_ssp_path_symlink(wasm_exec_env_t exec_env, struct fd_table *curfds,
     wasm_runtime_free(target);
 
     return error;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2094,7 +2110,7 @@ wasmtime_ssp_poll_oneoff(wasm_exec_env_t exec_env, struct fd_table *curfds,
                          size_t nsubscriptions,
                          size_t *nevents) NO_LOCK_ANALYSIS
 {
-#if defined(BH_PLATFORM_WINDOWS)
+#if defined(BH_PLATFORM_WINDOWS) || defined(BH_PLATFORM_ZKVM)
     return __WASI_ENOSYS;
 #else
     // Sleeping.
@@ -2365,6 +2381,9 @@ wasi_ssp_sock_accept(wasm_exec_env_t exec_env, struct fd_table *curfds,
                      __wasi_fd_t fd, __wasi_fdflags_t flags,
                      __wasi_fd_t *fd_new)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     __wasi_filetype_t wasi_type;
     __wasi_rights_t max_base, max_inheriting;
     struct fd_object *fo;
@@ -2405,12 +2424,16 @@ fail:
         os_socket_close(new_sock);
     }
     return error;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_addr_local(wasm_exec_env_t exec_env, struct fd_table *curfds,
                          __wasi_fd_t fd, __wasi_addr_t *addr)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     bh_sockaddr_t bh_addr;
     int ret;
@@ -2429,12 +2452,16 @@ wasi_ssp_sock_addr_local(wasm_exec_env_t exec_env, struct fd_table *curfds,
     bh_sockaddr_to_wasi_addr(&bh_addr, addr);
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_addr_remote(wasm_exec_env_t exec_env, struct fd_table *curfds,
                           __wasi_fd_t fd, __wasi_addr_t *addr)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     bh_sockaddr_t bh_addr;
     int ret;
@@ -2453,6 +2480,7 @@ wasi_ssp_sock_addr_remote(wasm_exec_env_t exec_env, struct fd_table *curfds,
     bh_sockaddr_to_wasi_addr(&bh_addr, addr);
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 static bool
@@ -2488,6 +2516,9 @@ wasi_ssp_sock_bind(wasm_exec_env_t exec_env, struct fd_table *curfds,
                    struct addr_pool *addr_pool, __wasi_fd_t fd,
                    __wasi_addr_t *addr)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     char buf[48] = { 0 };
     struct fd_object *fo;
     __wasi_errno_t error;
@@ -2513,6 +2544,7 @@ wasi_ssp_sock_bind(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2523,6 +2555,9 @@ wasi_ssp_sock_addr_resolve(wasm_exec_env_t exec_env, struct fd_table *curfds,
                            __wasi_size_t addr_info_size,
                            __wasi_size_t *max_info_size)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     bh_addr_info_t *wamr_addr_info =
         wasm_runtime_malloc(addr_info_size * sizeof(bh_addr_info_t));
     uint8_t hints_is_ipv4 = hints->family == INET4;
@@ -2565,6 +2600,7 @@ wasi_ssp_sock_addr_resolve(wasm_exec_env_t exec_env, struct fd_table *curfds,
 
     wasm_runtime_free(wamr_addr_info);
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2572,6 +2608,9 @@ wasi_ssp_sock_connect(wasm_exec_env_t exec_env, struct fd_table *curfds,
                       struct addr_pool *addr_pool, __wasi_fd_t fd,
                       __wasi_addr_t *addr)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     char buf[48] = { 0 };
     struct fd_object *fo;
     __wasi_errno_t error;
@@ -2600,6 +2639,7 @@ wasi_ssp_sock_connect(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2607,6 +2647,9 @@ wasi_ssp_sock_get_recv_buf_size(wasm_exec_env_t exec_env,
                                 struct fd_table *curfds, __wasi_fd_t fd,
                                 __wasi_size_t *size)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2622,12 +2665,16 @@ wasi_ssp_sock_get_recv_buf_size(wasm_exec_env_t exec_env,
     *size = (__wasi_size_t)bufsize;
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_get_reuse_addr(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t fd, uint8_t *reuse)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2644,12 +2691,16 @@ wasi_ssp_sock_get_reuse_addr(wasm_exec_env_t exec_env, struct fd_table *curfds,
     *reuse = (uint8_t)enabled;
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_get_reuse_port(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t fd, uint8_t *reuse)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2666,6 +2717,7 @@ wasi_ssp_sock_get_reuse_port(wasm_exec_env_t exec_env, struct fd_table *curfds,
     *reuse = (uint8_t)enabled;
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2673,6 +2725,9 @@ wasi_ssp_sock_get_send_buf_size(wasm_exec_env_t exec_env,
                                 struct fd_table *curfds, __wasi_fd_t fd,
                                 __wasi_size_t *size)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2689,12 +2744,16 @@ wasi_ssp_sock_get_send_buf_size(wasm_exec_env_t exec_env,
     *size = (__wasi_size_t)bufsize;
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_listen(wasm_exec_env_t exec_env, struct fd_table *curfds,
                      __wasi_fd_t fd, __wasi_size_t backlog)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     int ret;
     __wasi_errno_t error =
@@ -2709,6 +2768,7 @@ wasi_ssp_sock_listen(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2716,6 +2776,9 @@ wasi_ssp_sock_open(wasm_exec_env_t exec_env, struct fd_table *curfds,
                    __wasi_fd_t poolfd, __wasi_address_family_t af,
                    __wasi_sock_type_t socktype, __wasi_fd_t *sockfd)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     bh_socket_t sock;
     bool is_tcp = SOCKET_DGRAM == socktype ? false : true;
     bool is_ipv4 = INET6 == af ? false : true;
@@ -2753,6 +2816,7 @@ wasi_ssp_sock_open(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2760,6 +2824,9 @@ wasi_ssp_sock_set_recv_buf_size(wasm_exec_env_t exec_env,
                                 struct fd_table *curfds, __wasi_fd_t fd,
                                 __wasi_size_t size)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2773,12 +2840,16 @@ wasi_ssp_sock_set_recv_buf_size(wasm_exec_env_t exec_env,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_set_reuse_addr(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t fd, uint8_t reuse)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2792,12 +2863,16 @@ wasi_ssp_sock_set_reuse_addr(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasi_ssp_sock_set_reuse_port(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t fd, uint8_t reuse)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2811,6 +2886,7 @@ wasi_ssp_sock_set_reuse_port(wasm_exec_env_t exec_env, struct fd_table *curfds,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2818,6 +2894,9 @@ wasi_ssp_sock_set_send_buf_size(wasm_exec_env_t exec_env,
                                 struct fd_table *curfds, __wasi_fd_t fd,
                                 __wasi_size_t size)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
     if (error != __WASI_ESUCCESS)
@@ -2831,6 +2910,7 @@ wasi_ssp_sock_set_send_buf_size(wasm_exec_env_t exec_env,
     }
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2850,6 +2930,9 @@ wasmtime_ssp_sock_recv_from(wasm_exec_env_t exec_env, struct fd_table *curfds,
                             __wasi_riflags_t ri_flags, __wasi_addr_t *src_addr,
                             size_t *recv_len)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     bh_sockaddr_t sockaddr, *sockaddr_ptr = NULL;
@@ -2883,6 +2966,7 @@ wasmtime_ssp_sock_recv_from(wasm_exec_env_t exec_env, struct fd_table *curfds,
 
     *recv_len = (size_t)ret;
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2890,6 +2974,9 @@ wasmtime_ssp_sock_send(wasm_exec_env_t exec_env, struct fd_table *curfds,
                        __wasi_fd_t sock, const void *buf, size_t buf_len,
                        size_t *sent_len)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -2907,6 +2994,7 @@ wasmtime_ssp_sock_send(wasm_exec_env_t exec_env, struct fd_table *curfds,
 
     *sent_len = (size_t)ret;
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2916,6 +3004,9 @@ wasmtime_ssp_sock_send_to(wasm_exec_env_t exec_env, struct fd_table *curfds,
                           __wasi_siflags_t si_flags,
                           const __wasi_addr_t *dest_addr, size_t *sent_len)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     char addr_buf[48] = { 0 };
     struct fd_object *fo;
     __wasi_errno_t error;
@@ -2947,6 +3038,7 @@ wasmtime_ssp_sock_send_to(wasm_exec_env_t exec_env, struct fd_table *curfds,
 
     *sent_len = (size_t)ret;
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -2973,6 +3065,8 @@ wasmtime_ssp_sched_yield(void)
     SwitchToThread();
 #elif defined(BH_PLATFORM_ZEPHYR)
     k_yield();
+#elif defined(BH_PLATFORM_ZKVM)
+    return -1;
 #else
     if (sched_yield() < 0)
         return convert_errno(errno);
@@ -3151,6 +3245,9 @@ static bool
 compare_address(const struct addr_pool *addr_pool_entry,
                 bh_ip_addr_buffer_t *target)
 {
+#ifdef BH_PLATFORM_ZKVM
+    return false;
+#else
     uint8_t maskbuf[16] = { 0 };
     uint8_t basebuf[16] = { 0 };
     size_t addr_size;
@@ -3194,11 +3291,13 @@ compare_address(const struct addr_pool *addr_pool_entry,
     }
 
     return true;
+#endif
 }
 
 bool
 addr_pool_search(struct addr_pool *addr_pool, const char *addr)
 {
+#ifndef BH_PLATFORM_ZKVM
     struct addr_pool *cur = addr_pool->next;
     bh_ip_addr_buffer_t target;
     __wasi_addr_type_t addr_type;
@@ -3226,7 +3325,7 @@ addr_pool_search(struct addr_pool *addr_pool, const char *addr)
 
         cur = cur->next;
     }
-
+#endif
     return false;
 }
 
@@ -3246,24 +3345,32 @@ addr_pool_destroy(struct addr_pool *addr_pool)
 
 // Defines a function that passes through the socket option to the OS
 // implementation
-#define WASMTIME_SSP_PASSTHROUGH_SOCKET_OPTION(FUNC_NAME, OPTION_TYPE) \
-    __wasi_errno_t wasmtime_ssp_sock_##FUNC_NAME(                      \
-        wasm_exec_env_t exec_env,                                      \
-        WASMTIME_SSP_PASSTHROUGH_FD_TABLE __wasi_fd_t sock,            \
-        OPTION_TYPE option)                                            \
-    {                                                                  \
-        struct fd_object *fo;                                          \
-        __wasi_errno_t error;                                          \
-        int ret;                                                       \
-        error = fd_object_get(curfds, &fo, sock, 0, 0);                \
-        if (error != 0)                                                \
-            return error;                                              \
-        ret = os_socket_##FUNC_NAME(fo->file_handle, option);          \
-        fd_object_release(exec_env, fo);                               \
-        if (BHT_OK != ret)                                             \
-            return convert_errno(errno);                               \
-        return __WASI_ESUCCESS;                                        \
+#define WASMTIME_SSP_PASSTHROUGH_SOCKET_OPTION(FUNC_NAME, OPTION_TYPE)    \
+    __wasi_errno_t wasmtime_ssp_sock_##FUNC_NAME(                         \
+        wasm_exec_env_t exec_env,                                         \
+        WASMTIME_SSP_PASSTHROUGH_FD_TABLE __wasi_fd_t sock,               \
+        OPTION_TYPE option)                                               \
+    {                                                                     \
+        PASSTHROUGH_SOCKET_OPTION_IMPL(FUNC_NAME, option)                \
     }
+
+#if defined(BH_PLATFORM_ZKVM)
+#define PASSTHROUGH_SOCKET_OPTION_IMPL(FUNC_NAME, option) \
+    return __WASI_ENOSYS;
+#else
+#define PASSTHROUGH_SOCKET_OPTION_IMPL(FUNC_NAME, option)       \
+        struct fd_object *fo;                                    \
+        __wasi_errno_t error;                                    \
+        int ret;                                                 \
+        error = fd_object_get(curfds, &fo, sock, 0, 0);          \
+        if (error != 0)                                          \
+            return error;                                        \
+        ret = os_socket_##FUNC_NAME(fo->file_handle, option);    \
+        fd_object_release(exec_env, fo);                         \
+        if (BHT_OK != ret)                                       \
+            return convert_errno(errno);                         \
+        return __WASI_ESUCCESS;
+#endif
 
 WASMTIME_SSP_PASSTHROUGH_SOCKET_OPTION(set_send_timeout, uint64)
 WASMTIME_SSP_PASSTHROUGH_SOCKET_OPTION(get_send_timeout, uint64 *)
@@ -3305,6 +3412,9 @@ __wasi_errno_t
 wasmtime_ssp_sock_set_linger(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t sock, bool is_enabled, int linger_s)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3317,12 +3427,16 @@ wasmtime_ssp_sock_set_linger(wasm_exec_env_t exec_env, struct fd_table *curfds,
     if (BHT_OK != ret)
         return convert_errno(errno);
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
 wasmtime_ssp_sock_get_linger(wasm_exec_env_t exec_env, struct fd_table *curfds,
                              __wasi_fd_t sock, bool *is_enabled, int *linger_s)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3336,6 +3450,7 @@ wasmtime_ssp_sock_get_linger(wasm_exec_env_t exec_env, struct fd_table *curfds,
         return convert_errno(errno);
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -3345,6 +3460,9 @@ wasmtime_ssp_sock_set_ip_add_membership(wasm_exec_env_t exec_env,
                                         __wasi_addr_ip_t *imr_multiaddr,
                                         uint32_t imr_interface)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3362,6 +3480,7 @@ wasmtime_ssp_sock_set_ip_add_membership(wasm_exec_env_t exec_env,
     if (BHT_OK != ret)
         return convert_errno(errno);
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -3371,6 +3490,9 @@ wasmtime_ssp_sock_set_ip_drop_membership(wasm_exec_env_t exec_env,
                                          __wasi_addr_ip_t *imr_multiaddr,
                                          uint32_t imr_interface)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3388,6 +3510,7 @@ wasmtime_ssp_sock_set_ip_drop_membership(wasm_exec_env_t exec_env,
     if (BHT_OK != ret)
         return convert_errno(errno);
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -3396,6 +3519,9 @@ wasmtime_ssp_sock_set_ip_multicast_loop(wasm_exec_env_t exec_env,
                                         __wasi_fd_t sock, bool ipv6,
                                         bool is_enabled)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3408,6 +3534,7 @@ wasmtime_ssp_sock_set_ip_multicast_loop(wasm_exec_env_t exec_env,
     if (BHT_OK != ret)
         return convert_errno(errno);
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }
 
 __wasi_errno_t
@@ -3416,6 +3543,9 @@ wasmtime_ssp_sock_get_ip_multicast_loop(wasm_exec_env_t exec_env,
                                         __wasi_fd_t sock, bool ipv6,
                                         bool *is_enabled)
 {
+#if defined(BH_PLATFORM_ZKVM)
+    return __WASI_ENOSYS;
+#else
     struct fd_object *fo;
     __wasi_errno_t error;
     int ret;
@@ -3429,4 +3559,5 @@ wasmtime_ssp_sock_get_ip_multicast_loop(wasm_exec_env_t exec_env,
         return convert_errno(errno);
 
     return __WASI_ESUCCESS;
+#endif // BH_PLATFORM_ZKVM
 }

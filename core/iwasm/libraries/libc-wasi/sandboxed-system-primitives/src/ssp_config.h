@@ -51,7 +51,8 @@
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__EMSCRIPTEN__) \
     && !defined(ESP_PLATFORM) && !defined(DISABLE_CLOCK_NANOSLEEP)           \
-    && !defined(BH_PLATFORM_FREERTOS) && !defined(BH_PLATFORM_ZEPHYR)
+    && !defined(BH_PLATFORM_FREERTOS) && !defined(BH_PLATFORM_ZEPHYR)        \
+    && !defined(BH_PLATFORM_ZKVM)
 #define CONFIG_HAS_CLOCK_NANOSLEEP 1
 #else
 #define CONFIG_HAS_CLOCK_NANOSLEEP 0
@@ -65,7 +66,7 @@
 
 #if !defined(__APPLE__) && !defined(BH_PLATFORM_LINUX_SGX) && !defined(_WIN32) \
     && !defined(__COSMOPOLITAN__) && !defined(BH_PLATFORM_FREERTOS)            \
-    && !defined(BH_PLATFORM_ZEPHYR)
+    && !defined(BH_PLATFORM_ZEPHYR) && !defined(BH_PLATFORM_ZKVM)
 #define CONFIG_HAS_PTHREAD_CONDATTR_SETCLOCK 1
 #else
 #define CONFIG_HAS_PTHREAD_CONDATTR_SETCLOCK 0

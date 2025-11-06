@@ -13,7 +13,9 @@
 
 #include "ssp_config.h"
 #include "bh_platform.h"
+#ifndef BH_PLATFORM_ZKVM
 #include "libc_errno.h"
+#endif
 #include "random.h"
 
 #if CONFIG_HAS_ARC4RANDOM_BUF
@@ -78,6 +80,14 @@ random_buf(void *buf, size_t len)
 {
     sys_rand_get(buf, len);
     return __WASI_ESUCCESS;
+}
+
+#elif defined(BH_PLATFORM_ZKVM)
+
+__wasi_errno_t
+random_buf(void *buf, size_t len)
+{
+    return __WASI_ENOSYS;
 }
 
 #else

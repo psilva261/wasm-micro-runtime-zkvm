@@ -148,7 +148,7 @@ endif ()
 include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
 
 set (THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
+find_package(Threads)
 
 add_library (vmlib ${WAMR_RUNTIME_LIB_SOURCE})
 set_target_properties (vmlib PROPERTIES OUTPUT_NAME iwasm)

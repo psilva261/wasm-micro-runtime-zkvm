@@ -7,7 +7,9 @@
 
 #include "ssp_config.h"
 #include "blocking_op.h"
+#ifndef BH_PLATFORM_ZKVM
 #include "libc_errno.h"
+#endif
 
 __wasi_errno_t
 blocking_op_close(wasm_exec_env_t exec_env, os_file_handle handle,
@@ -172,7 +174,7 @@ blocking_op_openat(wasm_exec_env_t exec_env, os_file_handle handle,
     return error;
 }
 
-#ifndef BH_PLATFORM_WINDOWS
+#if !defined(BH_PLATFORM_WINDOWS) && !defined(BH_PLATFORM_ZKVM)
 /* REVISIT: apply the os_file_handle style abstraction for pollfd? */
 __wasi_errno_t
 blocking_op_poll(wasm_exec_env_t exec_env, os_poll_file_handle *pfds,
