@@ -157,9 +157,7 @@ fail:
 #if !CONFIG_HAS_CLOCK_NANOSLEEP               \
     && (!CONFIG_HAS_PTHREAD_CONDATTR_SETCLOCK \
         || !CONFIG_HAS_PTHREAD_COND_TIMEDWAIT_RELATIVE_NP)
-#ifndef BH_PLATFORM_ZKVM
     cond->clock = CLOCK_MONOTONIC;
-#endif
 #endif
 
     return ret;
@@ -198,7 +196,7 @@ static inline bool
 cond_timedwait(struct cond *cond, struct mutex *lock, uint64_t timeout,
                bool abstime) REQUIRES_EXCLUSIVE(*lock) NO_LOCK_ANALYSIS
 {
-#if defined(BH_PLATFORM_ZEPHYR) || defined(BH_PLATFORM_ZKVM)
+#if defined(BH_PLATFORM_ZEPHYR)
     // TODO: Implement this for Zephyr
     return false;
 #else

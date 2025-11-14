@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2019 Intel Corporation.  All rights reserved.
  * Copyright (C) 2024 Grenoble INP - ESISAR.  All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
@@ -8,6 +9,12 @@
 
 #include <string.h>
 #include <stdlib.h>
+
+int
+ocall_get_errno()
+{
+    return errno;
+}
 
 static inline bool
 os_is_virtual_fd(int fd)
@@ -324,6 +331,12 @@ os_realpath(const char *path, char *resolved_path)
 }
 
 bool
+os_compare_file_handle(os_file_handle handle1, os_file_handle handle2)
+{
+    return handle1 == handle2;
+}
+
+bool
 os_is_stdin_handle(os_file_handle handle)
 {
     return handle == 0;
@@ -339,4 +352,33 @@ bool
 os_is_stderr_handle(os_file_handle handle)
 {
     return handle == 2;
+}
+
+int
+os_ioctl(os_file_handle handle, int request, ...)
+{
+    return __WASI_ENOSYS;
+}
+
+int
+os_poll(os_poll_file_handle *fds, os_nfds_t nfs, int timeout)
+{
+    return BHT_ERROR;
+}
+
+int
+sched_yield(void)
+{
+    return BHT_ERROR;
+}
+
+int
+get_errno(void)
+{
+    int ret;
+
+    if (ocall_get_errno(&ret) != 0) {
+        return -1;
+    }
+    return ret;
 }

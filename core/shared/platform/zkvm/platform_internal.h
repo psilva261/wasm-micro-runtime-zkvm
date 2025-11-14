@@ -31,6 +31,10 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include "baremetal_file.h"
+#include "baremetal_socket.h"
+#include "baremetal_time.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -60,6 +64,10 @@ typedef int os_raw_file_handle;
 typedef struct pollfd os_poll_file_handle;
 typedef int os_nfds_t;
 typedef struct timespec os_timespec;
+
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 4
+#endif
 
 static inline os_file_handle
 os_get_invalid_handle(void)

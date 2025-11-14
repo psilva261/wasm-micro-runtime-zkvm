@@ -13,9 +13,7 @@
 
 #include "ssp_config.h"
 #include "bh_platform.h"
-#ifndef BH_PLATFORM_ZKVM
 #include "libc_errno.h"
-#endif
 #include "random.h"
 
 #if CONFIG_HAS_ARC4RANDOM_BUF
