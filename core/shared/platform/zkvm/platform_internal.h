@@ -34,6 +34,7 @@
 #include "baremetal_file.h"
 #include "baremetal_socket.h"
 #include "baremetal_time.h"
+#include "baremetal_thread.h"
 
 #ifdef __cplusplus
 extern "C" {

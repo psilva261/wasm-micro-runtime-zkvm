@@ -150,3 +150,11 @@ os_thread_signal_inited()
 void
 os_thread_signal_destroy()
 {}
+
+int pthread_once(pthread_once_t *once_control, void (*init_routine)(void)) {
+    if (once_control != 0) {
+        // TODO
+        init_routine();
+    }
+    return 0;
+}

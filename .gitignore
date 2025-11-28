@@ -14,7 +14,6 @@
 .DS_Store
 *.o
 .aider*
-*.sw?
 
 core/deps/**
 core/shared/mem-alloc/tlsf

@@ -65,7 +65,7 @@
 
 #if !defined(__APPLE__) && !defined(BH_PLATFORM_LINUX_SGX) && !defined(_WIN32) \
     && !defined(__COSMOPOLITAN__) && !defined(BH_PLATFORM_FREERTOS)            \
-    && !defined(BH_PLATFORM_ZEPHYR) && !defined(BH_PLATFORM_ZKVM)
+    && !defined(BH_PLATFORM_ZEPHYR)
 #define CONFIG_HAS_PTHREAD_CONDATTR_SETCLOCK 1
 #else
 #define CONFIG_HAS_PTHREAD_CONDATTR_SETCLOCK 0
