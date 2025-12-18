@@ -114,6 +114,10 @@ void __atomic_store_4(volatile void *, unsigned int, int);
 static SymbolMap target_sym_map[] = {
     /* clang-format off */
     REG_COMMON_SYMBOLS
+    /* add missing symbols */
+    REG_SYM(__ltsf2),
+    REG_SYM(__floatdisf),
+    REG_SYM(__floatundisf),
 #ifdef NEED_SOFT_FP
     REG_SYM(__addsf3),
     REG_SYM(__divsf3),
