@@ -764,6 +764,38 @@ WASM_RUNTIME_API_EXTERN void
 wasm_runtime_instantiation_args_set_max_memory_pages(
     struct InstantiationArgs2 *p, uint32_t v);
 
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_arg(struct InstantiationArgs2 *p,
+                                             char *argv[], int argc);
+
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_env(struct InstantiationArgs2 *p,
+                                             const char *env[],
+                                             uint32_t env_count);
+
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_dir(struct InstantiationArgs2 *p,
+                                             const char *dir_list[],
+                                             uint32_t dir_count,
+                                             const char *map_dir_list[],
+                                             uint32_t map_dir_count);
+
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_stdio(struct InstantiationArgs2 *p,
+                                               int64_t stdinfd,
+                                               int64_t stdoutfd,
+                                               int64_t stderrfd);
+
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_addr_pool(struct InstantiationArgs2 *p,
+                                                   const char *addr_pool[],
+                                                   uint32_t addr_pool_size);
+
+WASM_RUNTIME_API_EXTERN void
+wasm_runtime_instantiation_args_set_wasi_ns_lookup_pool(
+    struct InstantiationArgs2 *p, const char *ns_lookup_pool[],
+    uint32_t ns_lookup_pool_size);
+
 /**
  * Instantiate a WASM module, with specified instantiation arguments
  *
@@ -1740,11 +1772,15 @@ wasm_table_type_get_max_size(const wasm_table_type_t table_type);
  *               auto check its boundary before calling the native function.
  *               If it is followed by '~', the checked length of the pointer
  *               is gotten from the following parameter, if not, the checked
- *               length of the pointer is 1.
+ *               length of the pointer is 1. The runtime will also convert
+ *               the app pointer to a native pointer, thus there is no need
+ *               to manually call `wasm_runtime_addr_app_to_native`.
  *          '~': the parameter is the pointer's length with i32 type, and must
  *               follow after '*'
  *          '$': the parameter is a string (i32 in WASM), and runtime will
- *               auto check its boundary before calling the native function
+ *               auto check its boundary before calling the native function.
+ *               Like '*', the runtime will also convert the app pointer to a
+ *               native pointer.
  * @param n_native_symbols specifies the number of native symbols in the array
  *
  * @return true if success, false otherwise
@@ -2400,6 +2436,17 @@ wasm_runtime_chain_shared_heaps(wasm_shared_heap_t head,
  */
 wasm_shared_heap_t
 wasm_runtime_unchain_shared_heaps(wasm_shared_heap_t head, bool entire_chain);
+
+/**
+ * Reset shared heap chain. For each shared heap in the chain, if it is a
+ * pre-allocated shared heap, its memory region will be zeroed. For a
+ * WAMR-managed shared heap, it will be destroyed and reinitialized.
+ *
+ * @param shared_heap The head of the shared heap chain.
+ * @return true if success, false otherwise.
+ */
+WASM_RUNTIME_API_EXTERN bool
+wasm_runtime_reset_shared_heap_chain(wasm_shared_heap_t shared_heap);
 
 /**
  * Attach a shared heap, it can be the head of shared heap chain, in that case,
