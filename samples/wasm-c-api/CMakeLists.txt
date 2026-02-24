@@ -66,9 +66,12 @@ if(NOT DEFINED WAMR_BUILD_JIT)
   set(WAMR_BUILD_JIT 0)
 endif()
 
+if(NOT DEFINED WAMR_BUILD_MULTI_MODULE)
+  set(WAMR_BUILD_MULTI_MODULE 1)
+endif()
+
 set(WAMR_BUILD_LIBC_BUILTIN 1)
 set(WAMR_BUILD_LIBC_WASI 0)
-set(WAMR_BUILD_MULTI_MODULE 1)
 set(WAMR_BUILD_DUMP_CALL_STACK 1)
 set(WAMR_BUILD_REF_TYPES 1)
 
@@ -85,11 +88,6 @@ if (NOT MSVC)
   # compiling and linking flags
   if (NOT (CMAKE_C_COMPILER MATCHES ".*clang.*" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang"))
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
-  endif ()
-  if (WAMR_BUILD_TARGET MATCHES "X86_.*" OR WAMR_BUILD_TARGET STREQUAL "AMD_64")
-    if (NOT (CMAKE_C_COMPILER MATCHES ".*clang.*" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang"))
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mindirect-branch-register")
-    endif ()
   endif ()
 endif()
 # build out vmlib

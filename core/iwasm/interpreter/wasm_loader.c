@@ -701,7 +701,7 @@ destroy_init_expr(WASMModule *module, InitializerExpression *expr)
 #endif
 
 #if WASM_ENABLE_EXTENDED_CONST_EXPR != 0
-    // free left expr and right exprs for binary oprand
+    /* free left expr and right exprs for binary operand */
     if (!is_expr_binary_op(expr->init_expr_type)) {
         return;
     }
@@ -8545,8 +8545,7 @@ check_offset_pop(WASMLoaderContext *ctx, uint32 cells)
 static bool
 check_dynamic_offset_pop(WASMLoaderContext *ctx, uint32 cells)
 {
-    if (ctx->dynamic_offset < 0
-        || (ctx->dynamic_offset > 0 && (uint32)ctx->dynamic_offset < cells))
+    if (ctx->dynamic_offset < 0 || (uint32)ctx->dynamic_offset < cells)
         return false;
     return true;
 }
@@ -9720,6 +9719,16 @@ preserve_local_for_block(WASMLoaderContext *loader_ctx, uint8 opcode,
 
     /* preserve locals before blocks to ensure that "tee/set_local" inside
         blocks will not influence the value of these locals */
+    uint32 frame_offset_cell =
+        (uint32)(loader_ctx->frame_offset - loader_ctx->frame_offset_bottom);
+    uint32 frame_ref_cell =
+        (uint32)(loader_ctx->frame_ref - loader_ctx->frame_ref_bottom);
+    if (frame_offset_cell < loader_ctx->stack_cell_num
+        || frame_ref_cell < loader_ctx->stack_cell_num) {
+        set_error_buf(error_buf, error_buf_size, "stack cell num error");
+        return false;
+    }
+
     while (i < loader_ctx->stack_cell_num) {
         int16 cur_offset = loader_ctx->frame_offset_bottom[i];
         uint8 cur_type = loader_ctx->frame_ref_bottom[i];
@@ -12106,13 +12115,19 @@ re_scan:
                         }
 #endif
 
+                        uint8 *frame_ref_before_pop = loader_ctx->frame_ref;
                         POP_TYPE(
                             wasm_type->types[wasm_type->param_count - i - 1]);
 #if WASM_ENABLE_FAST_INTERP != 0
                         /* decrease the frame_offset pointer accordingly to keep
-                         * consistent with frame_ref stack */
-                        cell_num = wasm_value_type_cell_num(
-                            wasm_type->types[wasm_type->param_count - i - 1]);
+                         * consistent with frame_ref stack. Use the actual
+                         * popped cell count instead of
+                         * wasm_value_type_cell_num() because when the stack top
+                         * is VALUE_TYPE_ANY, wasm_loader_pop_frame_ref always
+                         * pops exactly 1 cell regardless of the expected type
+                         */
+                        cell_num = (uint32)(frame_ref_before_pop
+                                            - loader_ctx->frame_ref);
                         loader_ctx->frame_offset -= cell_num;
 
                         if (loader_ctx->frame_offset

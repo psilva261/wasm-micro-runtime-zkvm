@@ -2081,17 +2081,25 @@ aot_instantiate(AOTModule *module, AOTModuleInstance *parent,
 
 #if WASM_ENABLE_LIBC_WASI != 0
     if (!is_sub_inst) {
+        const WASIArguments *wasi_args = &args->wasi;
+        if (module->wasi_args.set_by_user) {
+            if (wasi_args->set_by_user) {
+                set_error_buf(error_buf, error_buf_size,
+                              "WASI configuration was given via both of module "
+                              "and InstantiationArgs2");
+                goto fail;
+            }
+            wasi_args = &module->wasi_args;
+        }
         if (!wasm_runtime_init_wasi(
-                (WASMModuleInstanceCommon *)module_inst,
-                module->wasi_args.dir_list, module->wasi_args.dir_count,
-                module->wasi_args.map_dir_list, module->wasi_args.map_dir_count,
-                module->wasi_args.env, module->wasi_args.env_count,
-                module->wasi_args.addr_pool, module->wasi_args.addr_count,
-                module->wasi_args.ns_lookup_pool,
-                module->wasi_args.ns_lookup_count, module->wasi_args.argv,
-                module->wasi_args.argc, module->wasi_args.stdio[0],
-                module->wasi_args.stdio[1], module->wasi_args.stdio[2],
-                error_buf, error_buf_size))
+                (WASMModuleInstanceCommon *)module_inst, wasi_args->dir_list,
+                wasi_args->dir_count, wasi_args->map_dir_list,
+                wasi_args->map_dir_count, wasi_args->env, wasi_args->env_count,
+                wasi_args->addr_pool, wasi_args->addr_count,
+                wasi_args->ns_lookup_pool, wasi_args->ns_lookup_count,
+                wasi_args->argv, wasi_args->argc, wasi_args->stdio[0],
+                wasi_args->stdio[1], wasi_args->stdio[2], error_buf,
+                error_buf_size))
             goto fail;
     }
 #endif
@@ -2477,6 +2485,7 @@ invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
        native stack to run the following codes before actually calling
        the aot function in invokeNative function. */
     if (!wasm_runtime_detect_native_stack_overflow(exec_env)) {
+        wasm_runtime_set_exec_env_tls(NULL);
         return false;
     }
 
@@ -4690,7 +4699,7 @@ static bool
 cmpxchg_ptr(void **ptr, void *old_val, void *new_val)
 {
 #if defined(os_atomic_cmpxchg)
-    return os_atomic_cmpxchg(ptr, &old_val, new_val);
+    return os_atomic_cmpxchg((_Atomic(void *) *)ptr, &old_val, new_val);
 #else
     /* TODO: add lock when thread-manager is enabled */
     void *read = *ptr;

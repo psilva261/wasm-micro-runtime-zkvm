@@ -8,6 +8,7 @@
 
 #include "bh_read_file.h"
 #include "wasm_runtime_common.h"
+#include "bh_platform.h"
 
 #include <gtest/gtest-spi.h>
 
@@ -32,13 +33,13 @@ static void
 destroy_module_env(struct ret_env module_env);
 
 static bool
-load_wasm(char *wasm_file_tested, unsigned int app_heap_size,
+load_wasm(const char *wasm_file_tested, unsigned int app_heap_size,
           ret_env &ret_module_env)
 {
     char *wasm_file = strdup(wasm_file_tested);
     unsigned int wasm_file_size = 0;
     unsigned int stack_size = 16 * 1024, heap_size = app_heap_size;
-    char error_buf[128] = { 0 };
+    char error_buf[128] = {};
 
     ret_module_env.wasm_file_buf =
         (unsigned char *)bh_read_file_to_buffer(wasm_file, &wasm_file_size);
@@ -141,11 +142,11 @@ fail0:
 
 TEST_F(shared_heap_test, test_shared_heap_basic)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[1] = { 0 };
+    uint32 argv[1] = {};
 
-    args.size = 1024;
+    args.size = os_getpagesize();
     shared_heap = wasm_runtime_create_shared_heap(&args);
 
     if (!shared_heap) {
@@ -164,33 +165,36 @@ TEST_F(shared_heap_test, test_shared_heap_basic)
 
 TEST_F(shared_heap_test, test_shared_heap_malloc_fail)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[1] = { 0 };
+    uint32 argv[1] = {};
 
-    args.size = 1024;
+    args.size = os_getpagesize();
     shared_heap = wasm_runtime_create_shared_heap(&args);
 
     if (!shared_heap) {
         FAIL() << "Failed to create shared heap";
     }
 
-    test_shared_heap(shared_heap, "test.wasm", "test_malloc_fail", 0, argv);
+    argv[0] = os_getpagesize();
+    test_shared_heap(shared_heap, "test.wasm", "test_malloc_fail", 1, argv);
     EXPECT_EQ(1, argv[0]);
 
-    test_shared_heap(shared_heap, "test.aot", "test_malloc_fail", 0, argv);
+    argv[0] = os_getpagesize();
+    test_shared_heap(shared_heap, "test.aot", "test_malloc_fail", 1, argv);
     EXPECT_EQ(1, argv[0]);
 
-    test_shared_heap(shared_heap, "test_chain.aot", "test_malloc_fail", 0,
+    argv[0] = os_getpagesize();
+    test_shared_heap(shared_heap, "test_chain.aot", "test_malloc_fail", 1,
                      argv);
     EXPECT_EQ(1, argv[0]);
 }
 
 TEST_F(shared_heap_test, test_preallocated_shared_heap_malloc_fail)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE];
 
     /* create a preallocated shared heap */
@@ -217,11 +221,67 @@ TEST_F(shared_heap_test, test_preallocated_shared_heap_malloc_fail)
     EXPECT_EQ(0, argv[0]);
 }
 
+TEST_F(shared_heap_test, test_preallocated_shared_runtime_api)
+{
+    struct ret_env tmp_module_env;
+    SharedHeapInitArgs args = {};
+    WASMSharedHeap *shared_heap = nullptr;
+    uint32 argv[1] = {};
+    void *native_ptr;
+    uint64 offset, size;
+    bool ret;
+
+    args.size = 0x4000;
+    shared_heap = wasm_runtime_create_shared_heap(&args);
+
+    if (!shared_heap) {
+        FAIL() << "Failed to create shared heap";
+    }
+
+    if (!load_wasm("test.wasm", 0, tmp_module_env)) {
+        FAIL() << "Failed to load wasm file\n";
+    }
+
+    if (!wasm_runtime_attach_shared_heap(tmp_module_env.wasm_module_inst,
+                                         shared_heap)) {
+        ADD_FAILURE() << "Failed to attach shared heap\n";
+        goto fail1;
+    }
+
+    offset = wasm_runtime_shared_heap_malloc(tmp_module_env.wasm_module_inst,
+                                             32, &native_ptr);
+    if (!offset) {
+        ADD_FAILURE() << "Failed to attach shared heap\n";
+        goto fail2;
+    }
+
+    size = (uint64_t)UINT32_MAX + 0x2000;
+    printf("offset %lx size: %lx\n", offset, size);
+    ASSERT_EQ(false, wasm_runtime_validate_app_addr(
+                         tmp_module_env.wasm_module_inst, offset, size));
+
+    ASSERT_EQ(NULL, wasm_runtime_addr_app_to_native(
+                        tmp_module_env.wasm_module_inst, offset + size));
+
+    size = (uint64_t)10;
+    ASSERT_EQ(true, wasm_runtime_validate_app_addr(
+                        tmp_module_env.wasm_module_inst, offset, size));
+
+    ASSERT_EQ((char *)native_ptr + size,
+              wasm_runtime_addr_app_to_native(tmp_module_env.wasm_module_inst,
+                                              offset + size));
+
+fail2:
+    wasm_runtime_detach_shared_heap(tmp_module_env.wasm_module_inst);
+fail1:
+    destroy_module_env(tmp_module_env);
+}
+
 static void
 create_test_shared_heap(uint8 *preallocated_buf, size_t size,
                         WASMSharedHeap **shared_heap_res)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
     args.pre_allocated_addr = preallocated_buf;
     args.size = size;
@@ -241,7 +301,7 @@ create_test_shared_heap_chain(uint8 *preallocated_buf, size_t size,
                               uint8 *preallocated_buf2, size_t size2,
                               WASMSharedHeap **shared_heap_chain)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr;
     args.pre_allocated_addr = preallocated_buf;
     args.size = size;
@@ -268,8 +328,8 @@ create_test_shared_heap_chain(uint8 *preallocated_buf, size_t size,
 TEST_F(shared_heap_test, test_shared_heap_rmw)
 {
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[2] = { 0 }, BUF_SIZE = os_getpagesize();
-    uint8 preallocated_buf[BUF_SIZE] = { 0 };
+    uint32 argv[2] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE] = {};
     uint32 start1, end1;
 
     create_test_shared_heap(preallocated_buf, BUF_SIZE, &shared_heap);
@@ -305,11 +365,10 @@ TEST_F(shared_heap_test, test_shared_heap_rmw)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_rmw)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[2] = { 0 }, BUF_SIZE = os_getpagesize();
-    uint8 preallocated_buf[BUF_SIZE] = { 0 },
-          preallocated_buf2[BUF_SIZE] = { 0 };
+    uint32 argv[2] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE] = {}, preallocated_buf2[BUF_SIZE] = {};
     uint32 start1, end1, start2, end2;
 
     create_test_shared_heap_chain(preallocated_buf, BUF_SIZE, preallocated_buf2,
@@ -354,11 +413,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_rmw)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_rmw_bulk_memory)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[3] = { 0 }, BUF_SIZE = os_getpagesize();
-    uint8 preallocated_buf[BUF_SIZE] = { 0 },
-          preallocated_buf2[BUF_SIZE] = { 0 };
+    uint32 argv[3] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE] = {}, preallocated_buf2[BUF_SIZE] = {};
     uint32 start1, end1, start2, end2;
 
     create_test_shared_heap_chain(preallocated_buf, BUF_SIZE, preallocated_buf2,
@@ -410,11 +468,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_rmw_bulk_memory)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_rmw_bulk_memory_oob)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[3] = { 0 }, BUF_SIZE = os_getpagesize();
-    uint8 preallocated_buf[BUF_SIZE] = { 0 },
-          preallocated_buf2[BUF_SIZE] = { 0 };
+    uint32 argv[3] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE] = {}, preallocated_buf2[BUF_SIZE] = {};
     uint32 start1, end1, start2, end2;
 
     create_test_shared_heap_chain(preallocated_buf, BUF_SIZE, preallocated_buf2,
@@ -495,7 +552,7 @@ TEST_F(shared_heap_test, test_shared_heap_chain_rmw_bulk_memory_oob)
 TEST_F(shared_heap_test, test_shared_heap_rmw_oob)
 {
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[2] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[2] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE], preallocated_buf2[BUF_SIZE];
     uint32 start1, end1, start2, end2;
 
@@ -529,7 +586,7 @@ TEST_F(shared_heap_test, test_shared_heap_rmw_oob)
 TEST_F(shared_heap_test, test_shared_heap_chain_rmw_oob)
 {
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[2] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[2] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE], preallocated_buf2[BUF_SIZE];
     uint32 start1, end1, start2, end2;
 
@@ -562,9 +619,8 @@ TEST_F(shared_heap_test, test_shared_heap_chain_rmw_oob)
 TEST_F(shared_heap_test, test_shared_heap_chain_memory64_rmw)
 {
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[3] = { 0 }, BUF_SIZE = os_getpagesize();
-    uint8 preallocated_buf[BUF_SIZE] = { 0 },
-          preallocated_buf2[BUF_SIZE] = { 0 };
+    uint32 argv[3] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE] = {}, preallocated_buf2[BUF_SIZE] = {};
     uint64 start1, end1, start2, end2;
 
     create_test_shared_heap_chain(preallocated_buf, BUF_SIZE, preallocated_buf2,
@@ -610,7 +666,7 @@ TEST_F(shared_heap_test, test_shared_heap_chain_memory64_rmw)
 TEST_F(shared_heap_test, test_shared_heap_chain_memory64_rmw_oob)
 {
     WASMSharedHeap *shared_heap_chain = nullptr;
-    uint32 argv[3] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[3] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE], preallocated_buf2[BUF_SIZE];
     uint64 start1, end1, start2, end2;
 
@@ -670,9 +726,9 @@ static NativeSymbol g_test_native_symbols[] = {
 
 TEST_F(shared_heap_test, test_addr_conv)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[1] = { 0 };
+    uint32 argv[1] = {};
     bool ret = false;
 
     ret = wasm_native_register_natives("env", g_test_native_symbols,
@@ -699,9 +755,9 @@ TEST_F(shared_heap_test, test_addr_conv)
 
 TEST_F(shared_heap_test, test_addr_conv_pre_allocated_oob)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize(),
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize(),
            app_addr = 0xFFFFFFFF - BUF_SIZE;
     uint8 preallocated_buf[BUF_SIZE];
     bool ret = false;
@@ -739,10 +795,10 @@ TEST_F(shared_heap_test, test_addr_conv_pre_allocated_oob)
 
 TEST_F(shared_heap_test, test_shared_heap_chain)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE];
     bool ret = false;
 
@@ -782,7 +838,7 @@ TEST_F(shared_heap_test, test_shared_heap_chain)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_create_fail)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap_chain = nullptr;
 
@@ -805,10 +861,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_create_fail)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_create_fail2)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE];
     struct ret_env tmp_module_env;
 
@@ -847,10 +903,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_create_fail2)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_create_fail3)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap3 = nullptr, *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE], preallocated_buf2[BUF_SIZE];
 
     args.size = 1024;
@@ -892,10 +948,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_create_fail3)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_unchain)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap3 = nullptr, *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE], preallocated_buf2[BUF_SIZE];
 
     args.size = 1024;
@@ -942,12 +998,154 @@ TEST_F(shared_heap_test, test_shared_heap_chain_unchain)
               wasm_runtime_unchain_shared_heaps(shared_heap_chain, true));
 }
 
-TEST_F(shared_heap_test, test_shared_heap_chain_addr_conv)
+TEST_F(shared_heap_test, test_shared_heap_chain_reset_runtime_managed)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint8 buf_size = 64;
+    uint64 offset = 0, offset_after_reset = 0;
+    void *native_ptr = nullptr, *native_ptr_after_reset = nullptr;
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE];
+    struct ret_env tmp_module_env;
+
+    args.size = 4096;
+    shared_heap = wasm_runtime_create_shared_heap(&args);
+    if (!shared_heap) {
+        FAIL() << "Failed to create shared heap";
+    }
+
+    args.size = BUF_SIZE;
+    args.pre_allocated_addr = preallocated_buf;
+    shared_heap2 = wasm_runtime_create_shared_heap(&args);
+    if (!shared_heap2) {
+        FAIL() << "Failed to create second shared heap";
+    }
+
+    shared_heap_chain =
+        wasm_runtime_chain_shared_heaps(shared_heap, shared_heap2);
+    if (!shared_heap_chain) {
+        FAIL() << "Create shared heap chain failed.\n";
+    }
+
+    if (!load_wasm((char *)"test.wasm", 0, tmp_module_env)) {
+        FAIL() << "Failed to load wasm file\n";
+    }
+
+    if (!wasm_runtime_attach_shared_heap(tmp_module_env.wasm_module_inst,
+                                         shared_heap_chain)) {
+        destroy_module_env(tmp_module_env);
+        FAIL() << "Failed to attach shared heap chain";
+    }
+
+    offset = wasm_runtime_shared_heap_malloc(tmp_module_env.wasm_module_inst,
+                                             buf_size, &native_ptr);
+    ASSERT_NE(0u, offset);
+    ASSERT_NE(nullptr, native_ptr);
+
+    memset(native_ptr, 0x5A, buf_size);
+    for (uint8 i = 0; i < buf_size; i++) {
+        EXPECT_EQ(0x5A, *((uint8 *)native_ptr + i));
+    }
+
+    wasm_runtime_detach_shared_heap(tmp_module_env.wasm_module_inst);
+    EXPECT_TRUE(wasm_runtime_reset_shared_heap_chain(shared_heap_chain));
+
+    if (!load_wasm((char *)"test.wasm", 0, tmp_module_env)) {
+        FAIL() << "Failed to load wasm file after reset\n";
+    }
+
+    if (!wasm_runtime_attach_shared_heap(tmp_module_env.wasm_module_inst,
+                                         shared_heap_chain)) {
+        destroy_module_env(tmp_module_env);
+        FAIL() << "Failed to attach shared heap chain after reset";
+    }
+
+    offset_after_reset = wasm_runtime_shared_heap_malloc(
+        tmp_module_env.wasm_module_inst, buf_size, &native_ptr_after_reset);
+    ASSERT_NE(0u, offset_after_reset);
+    ASSERT_NE(nullptr, native_ptr_after_reset);
+
+    EXPECT_EQ(offset, offset_after_reset);
+    EXPECT_EQ(native_ptr, native_ptr_after_reset);
+
+    /* Only on some platform, the os_mmap will memset the memory to 0
+        for (uint8 i = 0; i < buf_size; i++) {
+            EXPECT_EQ(0, *((uint8 *)native_ptr_after_reset + i));
+        }
+    */
+
+    wasm_runtime_detach_shared_heap(tmp_module_env.wasm_module_inst);
+    destroy_module_env(tmp_module_env);
+}
+
+TEST_F(shared_heap_test, test_shared_heap_chain_reset_preallocated)
+{
+    SharedHeapInitArgs args = {};
+    WASMSharedHeap *shared_heap = nullptr;
+    uint32 BUF_SIZE = os_getpagesize();
+    uint8 preallocated_buf[BUF_SIZE];
+    uint8 set_val = 0xA5;
+
+    args.pre_allocated_addr = preallocated_buf;
+    args.size = BUF_SIZE;
+    shared_heap = wasm_runtime_create_shared_heap(&args);
+    if (!shared_heap) {
+        FAIL() << "Create preallocated shared heap failed.\n";
+    }
+
+    memset(preallocated_buf, set_val, BUF_SIZE);
+    for (uint32 i = 0; i < BUF_SIZE; i++) {
+        EXPECT_EQ(set_val, preallocated_buf[i]);
+    }
+
+    EXPECT_TRUE(wasm_runtime_reset_shared_heap_chain(shared_heap));
+
+    for (uint32 i = 0; i < BUF_SIZE; i++) {
+        EXPECT_EQ(0, preallocated_buf[i]);
+    }
+}
+
+TEST_F(shared_heap_test, test_shared_heap_chain_reset_attached_fail)
+{
+    SharedHeapInitArgs args = {};
+    WASMSharedHeap *shared_heap = nullptr;
+    struct ret_env module_env = {};
+    bool ret;
+
+    args.size = 1024;
+    shared_heap = wasm_runtime_create_shared_heap(&args);
+    if (!shared_heap) {
+        FAIL() << "Failed to create shared heap";
+    }
+
+    ret = load_wasm((char *)"test.wasm", 0, module_env);
+    if (!ret) {
+        FAIL() << "Failed to load wasm";
+    }
+
+    ret = wasm_runtime_attach_shared_heap(module_env.wasm_module_inst,
+                                          shared_heap);
+    if (!ret) {
+        destroy_module_env(module_env);
+        FAIL() << "Failed to attach shared heap";
+    }
+
+    EXPECT_FALSE(wasm_runtime_reset_shared_heap_chain(shared_heap));
+
+    wasm_runtime_detach_shared_heap(module_env.wasm_module_inst);
+    destroy_module_env(module_env);
+
+    EXPECT_TRUE(wasm_runtime_reset_shared_heap_chain(shared_heap));
+}
+
+TEST_F(shared_heap_test, test_shared_heap_chain_addr_conv)
+{
+    SharedHeapInitArgs args = {};
+    WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
+                   *shared_heap_chain = nullptr;
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE];
     bool ret = false;
 
@@ -1001,10 +1199,10 @@ TEST_F(shared_heap_test, test_shared_heap_chain_addr_conv)
 
 TEST_F(shared_heap_test, test_shared_heap_chain_addr_conv_oob)
 {
-    SharedHeapInitArgs args = { 0 };
+    SharedHeapInitArgs args = {};
     WASMSharedHeap *shared_heap = nullptr, *shared_heap2 = nullptr,
                    *shared_heap_chain = nullptr;
-    uint32 argv[1] = { 0 }, BUF_SIZE = os_getpagesize();
+    uint32 argv[1] = {}, BUF_SIZE = os_getpagesize();
     uint8 preallocated_buf[BUF_SIZE];
     bool ret = false;
 
