@@ -59,6 +59,7 @@ typedef int korp_sem;
 
 #define bh_socket_t int
 
+typedef int os_signal_handler;
 typedef int os_file_handle;
 typedef DIR *os_dir_stream;
 typedef int os_raw_file_handle;
